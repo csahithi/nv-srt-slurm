@@ -274,3 +274,70 @@ class TestProfilingIntegration:
 
     def test_sglang_bench_script_exists(self):
         assert (SCRIPTS_DIR / "sglang-bench" / "bench.sh").exists()
+
+    def test_sglang_bench_runner_validate_config(self):
+        from srtctl.core.schema import (
+            BenchmarkConfig,
+            ModelConfig,
+            ProfilingConfig,
+            ProfilingPhaseConfig,
+            ResourceConfig,
+            SrtConfig,
+        )
+
+        runner = get_runner("sglang-bench")
+
+        config_missing = SrtConfig(
+            name="test",
+            model=ModelConfig(path="/model", container="/container", precision="fp8"),
+            resources=ResourceConfig(
+                gpu_type="h100",
+                prefill_nodes=1,
+                decode_nodes=1,
+                prefill_workers=1,
+                decode_workers=1,
+            ),
+            benchmark=BenchmarkConfig(type="sglang-bench"),
+            profiling=ProfilingConfig(
+                type="torch",
+                prefill=ProfilingPhaseConfig(start_step=0, stop_step=10),
+                decode=ProfilingPhaseConfig(start_step=0, stop_step=10),
+            ),
+        )
+
+        errors = runner.validate_config(config_missing)
+        assert "benchmark.isl is required for sglang-bench" in errors
+        assert "benchmark.osl is required for sglang-bench" in errors
+        assert "benchmark.concurrencies is required for sglang-bench" in errors
+
+    def test_sglang_bench_runner_build_command(self):
+        from types import SimpleNamespace
+
+        from srtctl.core.schema import BenchmarkConfig, ModelConfig, ResourceConfig, SrtConfig
+
+        runner = get_runner("sglang-bench")
+        runtime = SimpleNamespace(frontend_port=8000)
+
+        config = SrtConfig(
+            name="test",
+            model=ModelConfig(path="/model", container="/container", precision="fp8"),
+            resources=ResourceConfig(
+                gpu_type="h100",
+                prefill_nodes=1,
+                decode_nodes=1,
+                prefill_workers=1,
+                decode_workers=1,
+            ),
+            benchmark=BenchmarkConfig(type="sglang-bench", isl=1024, osl=128, concurrencies=[1, 2]),
+        )
+
+        cmd = runner.build_command(config, runtime)
+        assert cmd == [
+            "bash",
+            "/srtctl-benchmarks/sglang-bench/bench.sh",
+            "http://localhost:8000",
+            "1024",
+            "128",
+            "1x2",
+            "inf",
+        ]

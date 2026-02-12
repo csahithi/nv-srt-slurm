@@ -45,12 +45,12 @@ class BenchmarkStageMixin:
     @property
     def endpoints(self) -> list["Endpoint"]:
         """Endpoint allocation topology."""
-        ...
+        raise NotImplementedError
 
     @property
     def backend_processes(self) -> list["Process"]:
         """Backend worker processes."""
-        ...
+        raise NotImplementedError
 
     def run_benchmark(
         self, registry: "ProcessRegistry", stop_event: threading.Event, reporter: StatusReporter | None = None
@@ -193,7 +193,6 @@ class BenchmarkStageMixin:
 
         # Profiling type (nsys, torch)
         env["PROFILE_TYPE"] = p.type
-        env["SRTCTL_FRONTEND_TYPE"] = self.config.frontend.type
 
         # Phase-specific step configs
         if p.prefill:
@@ -228,7 +227,7 @@ class BenchmarkStageMixin:
         for process in self.backend_processes:
             if not process.is_leader:
                 continue
-            leader_ip = get_hostname_ip(process.node)
+            leader_ip = get_hostname_ip(process.node, self.runtime.network_interface)
             port = process.sys_port if use_sys_port else process.http_port
             leader_endpoint = f"{leader_ip}:{port}"
             if process.endpoint_mode == "prefill":
@@ -284,6 +283,7 @@ class BenchmarkStageMixin:
         from srtctl.benchmarks.base import AIPerfBenchmarkRunner
 
         env = self._get_benchmark_profiling_env(runner)
+        env["SRTCTL_FRONTEND_TYPE"] = self.config.frontend.type
 
         # Add AIPerf metrics URLs for AIPerf-driven benchmarks
         if isinstance(runner, AIPerfBenchmarkRunner):

@@ -23,16 +23,9 @@ srtctl supports two profiling backends for performance analysis: **Torch Profile
 Add a `profiling` section to your job YAML:
 
 ```yaml
-# must set benchmark type to "manual"
-benchmark:
-  type: "manual"
-
 # For disaggregated mode (prefill_nodes + decode_nodes)
 profiling:
   type: "torch" # or "nsys"
-  isl: 1024
-  osl: 128
-  concurrency: 24
   prefill:
     start_step: 0
     stop_step: 50
@@ -42,9 +35,6 @@ profiling:
 # For aggregated mode (agg_nodes)
 # profiling:
 #   type: "torch"
-#   isl: 1024
-#   osl: 128
-#   concurrency: 24
 #   aggregated:
 #     start_step: 0
 #     stop_step: 50
@@ -66,11 +56,6 @@ profiling:
 profiling:
   type: "torch" # Required: "none", "torch", or "nsys"
 
-  # Traffic generator parameters (required when profiling is enabled)
-  isl: 1024 # Input sequence length
-  osl: 128 # Output sequence length
-  concurrency: 24 # Batch size for profiling workload
-
   # Disaggregated mode: must set both prefill and decode sections
   prefill:
     start_step: 0 # Step to start profiling for prefill workers
@@ -86,15 +71,10 @@ profiling:
   #   stop_step: 50   # Step to stop profiling for aggregated workers
 ```
 
-Traffic generator parameters (`isl`, `osl`, `concurrency`) are shared across all phases. Per-phase `start_step`/`stop_step` allow different profiling windows for prefill vs decode workers.
-
 ### Parameters
 
 | Parameter               | Description                                   | Default  |
 | ----------------------- | --------------------------------------------- | -------- |
-| `isl`                   | Input sequence length for profiling requests  | Required |
-| `osl`                   | Output sequence length for profiling requests | Required |
-| `concurrency`           | Number of concurrent requests (batch size)    | Required |
 | `prefill.start_step`    | Step number to begin prefill profiling        | `0`      |
 | `prefill.stop_step`     | Step number to end prefill profiling          | `50`     |
 | `decode.start_step`     | Step number to begin decode profiling         | `0`      |
@@ -106,22 +86,9 @@ Traffic generator parameters (`isl`, `osl`, `concurrency`) are shared across all
 
 Profiling has specific requirements:
 
-1. **Single worker only**: Profiling requires exactly 1 prefill worker and 1 decode worker (or 1 aggregated worker)
+1. **Disaggregated mode**: When profiling disaggregated workers, both `profiling.prefill` and `profiling.decode` must be set.
 
-   ```yaml
-   resources:
-     prefill_workers: 1 # Must be 1
-     decode_workers: 1 # Must be 1
-   ```
-
-2. **No benchmarking**: Profiling and benchmarking are mutually exclusive
-
-   ```yaml
-   benchmark:
-     type: "manual" # Required when profiling
-   ```
-
-3. **Automatic config dump disabled**: When profiling is enabled, `enable_config_dump` is automatically set to `false`
+2. **Aggregated mode**: When profiling aggregated workers, `profiling.aggregated` must be set (and `profiling.prefill`/`profiling.decode` must not be set).
 
 ## How It Works
 
@@ -170,18 +137,12 @@ resources:
 
 profiling:
   type: "torch"
-  isl: 1024
-  osl: 128
-  concurrency: 24
   prefill:
     start_step: 0
     stop_step: 50
   decode:
     start_step: 0
     stop_step: 50
-
-benchmark:
-  type: "manual"
 
 backend:
   sglang_config:
@@ -198,9 +159,6 @@ backend:
 ```yaml
 profiling:
   type: "nsys"
-  isl: 2048
-  osl: 64
-  concurrency: 16
   prefill:
     start_step: 10
     stop_step: 30
@@ -213,14 +171,23 @@ profiling:
 
 After profiling completes, find results in the job's log directory:
 
+Torch profiler traces example:
+
+```
+logs/{job_id}_{workers}_{timestamp}/
+└── profiles/
+    ├── prefill/
+    │   └── *.json
+    └── decode/
+        └── *.json
+```
+
+Nsight Systems (nsys) reports example:
+
 ```
 logs/{job_id}_{workers}_{timestamp}/
 ├── profile_all.out         # Unified profiling script output
 └── profiles/
-    ├── prefill/            # Torch profiler traces (if type: torch)
-    │   └── *.json
-    ├── decode/
-    │   └── *.json
     ├── prefill/            # Nsys reports (if type: nsys)
     │   └── *.nsys-rep
     └── decode/
@@ -237,7 +204,7 @@ logs/{job_id}_{workers}_{timestamp}/
 **Nsight Systems reports:**
 
 - Open with NVIDIA Nsight Systems GUI
-- Or CLI: `nsys stats logs/.../profiles/decode_0.nsys-rep`
+- Or CLI: `nsys stats logs/.../profiles/decode/<name>.nsys-rep`
 
 ## Troubleshooting
 
@@ -261,8 +228,7 @@ benchmark:
 ```
 
 ### Empty profile output
-
-Ensure `isl`, `osl`, and `concurrency` are set - they're required for the profiling workload.
+Ensure the benchmark workload is generating requests during the profiling window.
 
 ### Profile too short/long
 

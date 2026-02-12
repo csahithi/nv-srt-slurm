@@ -45,12 +45,12 @@ class WorkerStageMixin:
     @property
     def backend_processes(self) -> list["Process"]:
         """Compute physical process topology from endpoints (cached)."""
-        ...
+        raise NotImplementedError
 
     @property
     def endpoints(self) -> list["Endpoint"]:
         """Endpoint allocation topology."""
-        ...
+        raise NotImplementedError
 
     def _build_worker_preamble(self) -> str | None:
         """Build bash preamble for worker processes.
@@ -93,8 +93,9 @@ class WorkerStageMixin:
         # Profiling setup
         profiling = self.config.profiling
         nsys_prefix = None
-        if profiling.is_nsys:
+        if profiling.enabled:
             (self.runtime.log_dir / "profiles" / mode).mkdir(parents=True, exist_ok=True)
+        if profiling.is_nsys:
             nsys_output = f"/logs/profiles/{mode}/{process.node}_{mode}_w{index}_profile"
             nsys_prefix = profiling.get_nsys_prefix(nsys_output, frontend_type=self.config.frontend.type)
 
@@ -138,7 +139,6 @@ class WorkerStageMixin:
 
         # Add profiling environment variables
         if profiling.enabled:
-            (self.runtime.log_dir / "profiles" / mode).mkdir(parents=True, exist_ok=True)
             profile_dir = str(self.runtime.log_dir / "profiles")
             env_to_set.update(profiling.get_env_vars(mode, profile_dir))
 
@@ -210,8 +210,9 @@ class WorkerStageMixin:
         # Profiling setup
         profiling = self.config.profiling
         nsys_prefix = None
-        if profiling.is_nsys:
+        if profiling.enabled:
             (self.runtime.log_dir / "profiles" / mode).mkdir(parents=True, exist_ok=True)
+        if profiling.is_nsys:
             nsys_output = f"/logs/profiles/{mode}/{leader.node}_{mode}_w{index}_profile"
             nsys_prefix = profiling.get_nsys_prefix(nsys_output, frontend_type=self.config.frontend.type)
 
@@ -241,7 +242,6 @@ class WorkerStageMixin:
 
         # Add profiling environment variables
         if profiling.enabled:
-            (self.runtime.log_dir / "profiles" / mode).mkdir(parents=True, exist_ok=True)
             profile_dir = str(self.runtime.log_dir / "profiles")
             env_to_set.update(profiling.get_env_vars(mode, profile_dir))
 
