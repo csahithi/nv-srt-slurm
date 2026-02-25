@@ -45,19 +45,19 @@ class WorkerStageMixin:
     @property
     def backend_processes(self) -> list["Process"]:
         """Compute physical process topology from endpoints (cached)."""
-        ...
+        raise NotImplementedError
 
     @property
     def endpoints(self) -> list["Endpoint"]:
         """Endpoint allocation topology."""
-        ...
+        raise NotImplementedError
 
     def _build_worker_preamble(self) -> str | None:
         """Build bash preamble for worker processes.
 
         Runs (in order):
         1. Custom setup script from /configs/ (if config.setup_script set)
-        2. Dynamo installation (if frontend type is dynamo and not profiling)
+        2. Dynamo installation (if frontend type is dynamo)
         """
         parts = []
 
@@ -69,10 +69,9 @@ class WorkerStageMixin:
                 f"if [ -f '{script_path}' ]; then bash '{script_path}'; else echo 'WARNING: {script_path} not found'; fi"
             )
 
-        # 2. Dynamo installation (required for dynamo.sglang when using dynamo frontend and not profiling)
-        # When profiling is enabled, we use sglang.launch_server directly (no dynamo)
+        # 2. Dynamo installation (required for dynamo.sglang when using dynamo frontend)
         # Skip if dynamo.install is False (container already has dynamo installed)
-        if self.config.frontend.type == "dynamo" and not self.config.profiling.enabled and self.config.dynamo.install:
+        if self.config.frontend.type == "dynamo" and self.config.dynamo.install:
             parts.append(self.config.dynamo.get_install_commands())
 
         if not parts:
@@ -94,9 +93,11 @@ class WorkerStageMixin:
         # Profiling setup
         profiling = self.config.profiling
         nsys_prefix = None
+        if profiling.enabled:
+            (self.runtime.log_dir / "profiles" / mode).mkdir(parents=True, exist_ok=True)
         if profiling.is_nsys:
-            nsys_output = str(self.runtime.log_dir / f"{process.node}_{mode}_w{index}_profile")
-            nsys_prefix = profiling.get_nsys_prefix(nsys_output)
+            nsys_output = f"/logs/profiles/{mode}/{process.node}_{mode}_w{index}_profile"
+            nsys_prefix = profiling.get_nsys_prefix(nsys_output, frontend_type=self.config.frontend.type)
 
         # Build command using backend's method
         cmd = self.backend.build_worker_command(
@@ -104,7 +105,6 @@ class WorkerStageMixin:
             endpoint_processes=endpoint_processes,
             runtime=self.runtime,
             frontend_type=self.config.frontend.type,
-            profiling_enabled=profiling.enabled,
             nsys_prefix=nsys_prefix,
             dump_config_path=config_dump,
         )
@@ -168,6 +168,7 @@ class WorkerStageMixin:
             container_mounts=self.runtime.container_mounts,
             env_to_set=env_to_set,
             bash_preamble=bash_preamble,
+            srun_options=self.runtime.srun_options,
         )
 
         return ManagedProcess(
@@ -210,9 +211,11 @@ class WorkerStageMixin:
         # Profiling setup
         profiling = self.config.profiling
         nsys_prefix = None
+        if profiling.enabled:
+            (self.runtime.log_dir / "profiles" / mode).mkdir(parents=True, exist_ok=True)
         if profiling.is_nsys:
-            nsys_output = str(self.runtime.log_dir / f"{leader.node}_{mode}_w{index}_profile")
-            nsys_prefix = profiling.get_nsys_prefix(nsys_output)
+            nsys_output = f"/logs/profiles/{mode}/{leader.node}_{mode}_w{index}_profile"
+            nsys_prefix = profiling.get_nsys_prefix(nsys_output, frontend_type=self.config.frontend.type)
 
         # Build command using backend's method
         cmd = self.backend.build_worker_command(
@@ -220,7 +223,6 @@ class WorkerStageMixin:
             endpoint_processes=endpoint_processes,
             runtime=self.runtime,
             frontend_type=self.config.frontend.type,
-            profiling_enabled=profiling.enabled,
             nsys_prefix=nsys_prefix,
             dump_config_path=config_dump,
         )
